@@ -1,0 +1,11 @@
+{
+  "extension.description": "Connect ACP agents to the native VS Code chat.",
+  "workspaceTrust.description": "ACP agents execute local programs and can change workspace files.",
+  "participant.description": "Work with a connected ACP agent",
+  "participant.connections.description": "Add, select or remove an ACP connection",
+  "participant.new.description": "Start a new ACP session",
+  "acp.openChat.title": "ACP: Open Chat",
+  "acp.manageConnections.title": "ACP: Manage Connections",
+  "acp.addConnection.title": "ACP: Add Connection",
+  "acp.removeConnection.title": "ACP: Remove Connection"
+}

@@ -1,0 +1,4 @@
+{
+  "version": "0.2.0",
+  "configurations": [{ "name": "Run ACP Extension", "type": "extensionHost", "request": "launch", "args": ["--extensionDevelopmentPath=${workspaceFolder}"], "preLaunchTask": "compile", "outFiles": ["${workspaceFolder}/dist/**/*.js"] }]
+}

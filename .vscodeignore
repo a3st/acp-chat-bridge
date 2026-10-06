@@ -1,0 +1,13 @@
+node_modules/**
+src/**
+test/**
+scripts/**
+.npm-cache/**
+tsconfig.json
+package-lock.json
+dist/*.map
+dist/runtime-test.cjs
+**/*.vsix
+.vscode/**
+.gitignore
+*.log

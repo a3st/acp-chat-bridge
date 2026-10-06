@@ -1,0 +1,94 @@
+{
+  "name": "acp-chat-bridge",
+  "displayName": "ACP Chat Bridge",
+  "description": "%extension.description%",
+  "version": "0.1.3",
+  "publisher": "a3st",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.140.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./dist/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "activationEvents": [
+    "onChatParticipant:acp-chat-bridge.chat",
+    "onLanguageModelChatProvider:acp-chat-bridge"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "%workspaceTrust.description%"
+    },
+    "virtualWorkspaces": false
+  },
+  "scripts": {
+    "compile": "tsc --noEmit && node scripts/build.mjs",
+    "test": "node scripts/test.mjs",
+    "vscode:prepublish": "npm run compile",
+    "package": "vsce package --allow-missing-repository"
+  },
+  "dependencies": {
+    "@agentclientprotocol/sdk": "1.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/vscode": "1.140.0",
+    "@vscode/vsce": "^4.0.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.9.0"
+  },
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "acp-chat-bridge.chat",
+        "name": "acp-agent",
+        "fullName": "ACP",
+        "description": "%participant.description%",
+        "isSticky": true,
+        "commands": [
+          {
+            "name": "connections",
+            "description": "%participant.connections.description%"
+          },
+          {
+            "name": "new",
+            "description": "%participant.new.description%"
+          }
+        ]
+      }
+    ],
+    "languageModelChatProviders": [
+      {
+        "vendor": "acp-chat-bridge",
+        "displayName": "ACP Chat Bridge",
+        "managementCommand": "acp.manageConnections"
+      }
+    ],
+    "commands": [
+      {
+        "command": "acp.openChat",
+        "title": "%acp.openChat.title%"
+      },
+      {
+        "command": "acp.manageConnections",
+        "title": "%acp.manageConnections.title%"
+      },
+      {
+        "command": "acp.addConnection",
+        "title": "%acp.addConnection.title%"
+      },
+      {
+        "command": "acp.removeConnection",
+        "title": "%acp.removeConnection.title%"
+      }
+    ]
+  },
+  "l10n": "./l10n",
+  "icon": "assets/icon.png"
+}
