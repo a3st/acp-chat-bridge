@@ -11,3 +11,7 @@ dist/runtime-test.cjs
 .vscode/**
 .gitignore
 *.log
+
+dist/extension-test.cjs
+
+.native-test/**

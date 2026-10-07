@@ -7,5 +7,8 @@
   "acp.openChat.title": "ACP: Open Chat",
   "acp.manageConnections.title": "ACP: Manage Connections",
   "acp.addConnection.title": "ACP: Add Connection",
-  "acp.removeConnection.title": "ACP: Remove Connection"
+  "acp.removeConnection.title": "ACP: Remove Connection",
+  "acp.diagnostics.title": "ACP: Show Diagnostics",
+  "tool.delegate.title": "ACP: Workspace Task",
+  "tool.delegate.description": "Run a workspace task with an ACP agent, including file changes and agent tools."
 }

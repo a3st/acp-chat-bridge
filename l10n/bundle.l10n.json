@@ -48,5 +48,10 @@
   "Allow once": "Allow once",
   "Allow always": "Allow always",
   "Reject once": "Reject once",
-  "Reject always": "Reject always"
+  "Reject always": "Reject always",
+  "The ACP model is not available. Run ACP: Show Diagnostics and check Output > ACP.": "The ACP model is not available. Run ACP: Show Diagnostics and check Output > ACP.",
+  "Running ACP agent: {0}": "Running ACP agent: {0}",
+  "Run ACP workspace task": "Run ACP workspace task",
+  "The ACP agent may modify workspace files and execute its own tools. Continue?": "The ACP agent may modify workspace files and execute its own tools. Continue?",
+  "Enable the ACP workspace task tool in the chat tools picker.": "Enable the ACP workspace task tool in the chat tools picker."
 }

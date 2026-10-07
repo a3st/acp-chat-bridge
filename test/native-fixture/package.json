@@ -1,8 +1,8 @@
 {
   "name": "acp-chat-bridge",
   "displayName": "ACP Chat Bridge",
-  "description": "%extension.description%",
-  "version": "0.1.10",
+  "description": "Native ACP integration test",
+  "version": "0.1.7",
   "publisher": "a3st",
   "license": "MIT",
   "engines": {
@@ -12,19 +12,16 @@
     "AI",
     "Other"
   ],
-  "main": "./dist/extension.js",
+  "main": "./main.cjs",
   "extensionKind": [
     "workspace"
   ],
   "activationEvents": [
-    "onChatParticipant:acp-chat-bridge.chat",
-    "onLanguageModelChatProvider:acp-chat-bridge",
     "onStartupFinished"
   ],
   "capabilities": {
     "untrustedWorkspaces": {
-      "supported": false,
-      "description": "%workspaceTrust.description%"
+      "supported": true
     },
     "virtualWorkspaces": false
   },
@@ -50,16 +47,16 @@
         "id": "acp-chat-bridge.chat",
         "name": "acp-agent",
         "fullName": "ACP",
-        "description": "%participant.description%",
+        "description": "ACP integration test",
         "isSticky": true,
         "commands": [
           {
             "name": "connections",
-            "description": "%participant.connections.description%"
+            "description": "connections"
           },
           {
             "name": "new",
-            "description": "%participant.new.description%"
+            "description": "new"
           }
         ]
       }
@@ -68,61 +65,32 @@
       {
         "vendor": "acp-chat-bridge",
         "displayName": "ACP Chat Bridge",
-        "managementCommand": "acp.addConnection"
+        "managementCommand": "acp.manageConnections"
       }
     ],
     "commands": [
       {
         "command": "acp.openChat",
-        "title": "%acp.openChat.title%",
-        "icon": "$(comment-discussion)"
+        "title": "acp.openChat"
       },
       {
         "command": "acp.manageConnections",
-        "title": "%acp.manageConnections.title%"
+        "title": "acp.manageConnections"
       },
       {
         "command": "acp.addConnection",
-        "title": "%acp.addConnection.title%"
+        "title": "acp.addConnection"
       },
       {
         "command": "acp.removeConnection",
-        "title": "%acp.removeConnection.title%"
-      },
-      {
-        "command": "acp.diagnostics",
-        "title": "%acp.diagnostics.title%"
+        "title": "acp.removeConnection"
       }
     ],
-    "menus": {
-      "view/title": [
-        {
-          "command": "acp.openChat",
-          "when": "view == workbench.panel.chat.view.copilot",
-          "group": "navigation@5"
-        },
-        {
-          "command": "acp.openChat",
-          "when": "view == workbench.panel.chat.view.copilot",
-          "group": "1_acp@1"
-        }
-      ],
-      "commandPalette": [
-        {
-          "command": "acp.addConnection",
-          "when": "false"
-        },
-        {
-          "command": "acp.removeConnection",
-          "when": "false"
-        }
-      ]
-    },
     "languageModelTools": [
       {
         "name": "acp_chat_bridge_delegate",
-        "displayName": "%tool.delegate.title%",
-        "userDescription": "%tool.delegate.description%",
+        "displayName": "ACP: Workspace Task",
+        "userDescription": "Run a workspace task with an ACP agent, including file changes and agent tools.",
         "modelDescription": "Delegate a complete workspace task to a configured ACP agent. The agent performs its own file edits and tools and returns the final response. Use only for a user-requested ACP task.",
         "canBeReferencedInPrompt": true,
         "toolReferenceName": "acpTask",
@@ -147,8 +115,15 @@
           "additionalProperties": false
         }
       }
-    ]
-  },
-  "l10n": "./l10n",
-  "icon": "assets/icon.png"
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "acp.openChat",
+          "when": "view == workbench.panel.chat.view.copilot",
+          "group": "navigation@5"
+        }
+      ]
+    }
+  }
 }

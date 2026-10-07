@@ -8,6 +8,8 @@ import { AgentSession, type Host } from './runtime';
 
 const vendor = 'acp-chat-bridge';
 const participantId = 'acp-chat-bridge.chat';
+const delegateTool = 'acp_chat_bridge_delegate';
+interface DelegateInput { connectionId: string; prompt: string }
 interface Metadata { sessionKey: string; turnId: string; connectionId: string }
 interface Entry { session: AgentSession; turnId: string; lastUsed: number }
 
@@ -51,6 +53,7 @@ async function workspaceFile(file: string): Promise<vscode.Uri> {
 export function activate(context: vscode.ExtensionContext) {
   const connections = new Connections(context);
   const output = vscode.window.createOutputChannel('ACP');
+  output.appendLine(`ACP ${context.extension?.packageJSON.version ?? 'development'}; VS Code ${vscode.version}; trusted=${vscode.workspace.isTrusted}`);
   const sessions = new Map<string, Entry>();
   const directSessions = new Set<AgentSession>();
   const host: Host = {
@@ -103,37 +106,99 @@ export function activate(context: vscode.ExtensionContext) {
     for (const [key, entry] of sessions) if (!connections.get(entry.session.config.id)) { entry.session.dispose(); sessions.delete(key); }
     for (const session of directSessions) if (!connections.get(session.config.id)) session.dispose();
   });
-  const provider: vscode.LanguageModelChatProvider = {
-    onDidChangeLanguageModelChatInformation: connections.onDidChange,
-    provideLanguageModelChatInformation: () => connections.all.map(c => ({
-      id: c.id, name: `ACP · ${c.name}`, family: `acp/${c.id}`, version: '1',
-      // ACP doesn't expose a tokenizer or context limits. Conservative UI estimates only.
-      maxInputTokens: 32768, maxOutputTokens: 8192, capabilities: { toolCalling: false, imageInput: false },
-      tooltip: vscode.l10n.t("ACP agent: {0}", c.command), detail: 'ACP'
-    })),
-    provideTokenCount: async (_model, text) => Math.ceil((typeof text === 'string' ? text : JSON.stringify(text.content)).length / 3),
-    provideLanguageModelChatResponse: async (model, messages, _options, progress, token) => {
-      const config = connections.get(model.id);
+  // Agent mode executes ACP as a real VS Code tool. ACP owns its internal tool loop.
+  context.subscriptions.push(vscode.lm.registerTool<DelegateInput>(delegateTool, {
+    prepareInvocation: options => ({
+      invocationMessage: vscode.l10n.t("Running ACP agent: {0}", connections.get(options.input.connectionId)?.name ?? options.input.connectionId),
+      confirmationMessages: {
+        title: vscode.l10n.t("Run ACP workspace task"),
+        message: vscode.l10n.t("The ACP agent may modify workspace files and execute its own tools. Continue?")
+      }
+    }),
+    invoke: async (options, token) => {
+      const config = connections.get(options.input.connectionId);
       if (!config) throw new Error(vscode.l10n.t("The ACP connection was removed."));
       const cancellation = abortToken(token);
       let session: AgentSession | undefined;
       try {
         session = new AgentSession(config, await cwd(cancellation.signal), host);
         directSessions.add(session);
+        let answer = '';
+        await session.prompt([{ type: 'text', text: options.input.prompt }], {
+          text: text => { answer += text; }, progress: text => output.appendLine(text)
+        }, cancellation.signal);
+        return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(answer)]);
+      } finally {
+        if (session) { session.dispose(); directSessions.delete(session); }
+        cancellation.dispose();
+      }
+    }
+  }));
+  const provider: vscode.LanguageModelChatProvider = {
+    onDidChangeLanguageModelChatInformation: connections.onDidChange,
+    provideLanguageModelChatInformation: async (options, token) => {
+      output.appendLine(`ACP model discovery: silent=${options.silent}; connections=${connections.all.length}`);
+      // Manage Models invokes discovery with silent=false for legacy managementCommand providers.
+      // Silent discovery must never open input UI or start an agent process.
+      if (!options.silent && !token.isCancellationRequested) await connections.add();
+      const models: vscode.LanguageModelChatInformation[] = connections.all.map(c => ({
+        id: c.id, name: `ACP · ${c.name}`, family: `acp/${c.id}`, version: '1',
+        // ACP doesn't expose a tokenizer or context limits. Conservative UI estimates only.
+        maxInputTokens: 32768, maxOutputTokens: 8192, capabilities: { toolCalling: true, imageInput: false },
+        tooltip: vscode.l10n.t("ACP agent: {0}", c.command), detail: 'ACP'
+      }));
+      return models;
+    },
+    provideTokenCount: async (_model, text) => Math.ceil((typeof text === 'string' ? text : JSON.stringify(text.content)).length / 3),
+    provideLanguageModelChatResponse: async (model, messages, options, progress, token) => {
+      const config = connections.get(model.id);
+      if (!config) throw new Error(vscode.l10n.t("The ACP connection was removed."));
+      if (token.isCancellationRequested) return;
+      // A tool result completes this turn; never replay the ACP task after tool execution.
+      const last = messages.at(-1);
+      const ownCalls = new Set(messages.flatMap(message => message.content.flatMap(part =>
+        part instanceof vscode.LanguageModelToolCallPart && part.name === delegateTool ? [part.callId] : [])));
+      const results = last?.content.filter(part => part instanceof vscode.LanguageModelToolResultPart && ownCalls.has(part.callId)) ?? [];
+      if (results.length) {
+        for (const result of results) if (result instanceof vscode.LanguageModelToolResultPart) {
+          for (const part of result.content) if (part instanceof vscode.LanguageModelTextPart) progress.report(part);
+        }
+        return;
+      }
+      const text = messages.map(m => `${m.role === vscode.LanguageModelChatMessageRole.User ? 'User' : 'Assistant'}: ${m.content.map(p => {
+        if (p instanceof vscode.LanguageModelTextPart) return p.value;
+        if (p instanceof vscode.LanguageModelToolResultPart) return p.content.map(part => part instanceof vscode.LanguageModelTextPart ? part.value : '').join('');
+        return '';
+      }).join('')}`).join('\n\n');
+      const tool = options.tools?.find(tool => tool.name === delegateTool);
+      if (tool) {
+        progress.report(new vscode.LanguageModelToolCallPart(randomUUID(), tool.name, { connectionId: config.id, prompt: text }));
+        return;
+      }
+      if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
+        throw new Error(vscode.l10n.t("Enable the ACP workspace task tool in the chat tools picker."));
+      }
+      const cancellation = abortToken(token);
+      let session: AgentSession | undefined;
+      try {
+        session = new AgentSession(config, await cwd(cancellation.signal), host);
+        directSessions.add(session);
         // Direct model usage has no stable chat session ID. Replay context in a fresh ACP session.
-        const text = messages.map(m => `${m.role === vscode.LanguageModelChatMessageRole.User ? 'User' : 'Assistant'}: ${m.content.map(p => p instanceof vscode.LanguageModelTextPart ? p.value : '').join('')}`).join('\n\n');
         await session.prompt([{ type: 'text', text }], { text: t => progress.report(new vscode.LanguageModelTextPart(t)), progress: () => {} }, cancellation.signal);
       } finally { if (session) { session.dispose(); directSessions.delete(session); } cancellation.dispose(); }
     }
   };
+  // Register the model provider before exposing the chat participant.
+  context.subscriptions.push(vscode.lm.registerLanguageModelChatProvider(vendor, provider));
   const participant = vscode.chat.createChatParticipant(participantId, async (request, chatContext, stream, token): Promise<vscode.ChatResult> => {
+    output.appendLine(`ACP participant invoked: command=${request.command ?? 'prompt'}; vendor=${request.model?.vendor ?? 'none'}; model=${request.model?.id ?? 'none'}`);
     if (request.command === 'connections') { await connections.manage(); stream.markdown(vscode.l10n.t("Select an ACP connection in the model picker below the input field.")); return {}; }
     const cancellation = abortToken(token);
     let key: string | undefined;
     try {
       const previous = [...chatContext.history].reverse().find(t => t instanceof vscode.ChatResponseTurn && t.participant === participantId) as vscode.ChatResponseTurn | undefined;
       const metadata = previous?.result.metadata as Metadata | undefined;
-      const modelId = request.model.vendor === vendor ? request.model.family.replace(/^acp\//, '') : undefined;
+      const modelId = request.model?.vendor === vendor ? request.model.family.replace(/^acp\//, '') : undefined;
       const config = connections.get(modelId ?? connections.selected ?? '');
       if (!config) {
         stream.markdown(vscode.l10n.t("Add an ACP connection, then select it in the model picker below the input field."));
@@ -194,11 +259,42 @@ export function activate(context: vscode.ExtensionContext) {
   });
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets', 'icon.png');
   context.subscriptions.push(connections, output, changed, participant,
-    vscode.lm.registerLanguageModelChatProvider(vendor, provider),
     vscode.commands.registerCommand('acp.manageConnections', () => connections.manage()),
     vscode.commands.registerCommand('acp.addConnection', () => connections.add()),
     vscode.commands.registerCommand('acp.removeConnection', () => connections.remove()),
-    vscode.commands.registerCommand('acp.openChat', () => vscode.commands.executeCommand('workbench.action.chat.open', { query: '@acp-agent ' })),
+    vscode.commands.registerCommand('acp.diagnostics', async () => {
+      output.show(true);
+      const report: Record<string, unknown> = {
+        vscode: vscode.version, extension: context.extension?.packageJSON.version,
+        extensionId: context.extension?.id, trusted: vscode.workspace.isTrusted,
+        remote: vscode.env.remoteName ?? 'local', connections: connections.all.length,
+        selectedConnection: connections.selected ?? null
+      };
+      try {
+        report.models = (await vscode.lm.selectChatModels({ vendor })).map(model => ({
+          id: model.id, vendor: model.vendor, family: model.family, name: model.name
+        }));
+      } catch (error) { report.error = error instanceof Error ? error.message : String(error); }
+      output.appendLine(JSON.stringify(report, null, 2));
+      return report;
+    }),
+    vscode.commands.registerCommand('acp.openChat', async () => {
+      if (!vscode.workspace.isTrusted) throw new Error(vscode.l10n.t("Trust the workspace folder first."));
+      if (!connections.all.length) await connections.add();
+      const config = connections.get(connections.selected ?? '') ?? connections.all[0];
+      if (!config) return; // Initial setup was cancelled.
+      const models = await vscode.lm.selectChatModels({ vendor, id: config.id });
+      output.appendLine(`ACP open chat: selected=${config.id}; resolvedModels=${models.length}`);
+      if (!models.length) {
+        output.show(true);
+        throw new Error(vscode.l10n.t("The ACP model is not available. Run ACP: Show Diagnostics and check Output > ACP."));
+      }
+      // Third-party participants run in local chat; agent-host/cloud sessions own their model selection.
+      await vscode.commands.executeCommand('workbench.action.chat.newLocalChat');
+      await vscode.commands.executeCommand('workbench.action.chat.open', {
+        query: '@acp-agent ', isPartialQuery: true, mode: 'agent', modelSelector: { vendor, id: config.id }
+      });
+    }),
     { dispose: () => { for (const entry of sessions.values()) entry.session.dispose(); sessions.clear(); for (const session of directSessions) session.dispose(); directSessions.clear(); } }
   );
 }

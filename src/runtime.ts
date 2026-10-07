@@ -66,7 +66,7 @@ export class AgentSession {
     try {
     const init = await this.connection.agent.request(acp.methods.agent.initialize, {
       protocolVersion: acp.PROTOCOL_VERSION,
-      clientInfo: { name: 'acp-chat-bridge', version: '0.1.2' },
+      clientInfo: { name: 'acp-chat-bridge', version: '0.1.5' },
       clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: false }
     }, { cancellationSignal: startupSignal });
     if (init.protocolVersion !== acp.PROTOCOL_VERSION) throw new Error(this.t("Unsupported ACP version: {0}", init.protocolVersion));

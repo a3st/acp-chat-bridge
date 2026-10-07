@@ -1,7 +1,9 @@
 import { createInterface } from 'node:readline';
+import path from 'node:path';
 const mode = process.argv[2];
 const pending = new Map();
 let turns = 0;
+let workspace;
 let authenticated = false;
 let nextId = 1000;
 const send = message => process.stdout.write(JSON.stringify({ jsonrpc: '2.0', ...message }) + '\n');
@@ -17,6 +19,7 @@ createInterface({ input: process.stdin }).on('line', async line => {
     reply(message.id, { protocolVersion: message.params.protocolVersion, agentCapabilities: {}, authMethods: [{ id: 'login', name: 'Login' }] });
   } else if (message.method === 'authenticate') { authenticated = true; reply(message.id, {}); }
   else if (message.method === 'session/new') {
+    workspace = message.params.cwd;
     if (mode === 'auth' && !authenticated) send({ id: message.id, error: { code: -32000, message: 'Authentication required' } });
     else reply(message.id, { sessionId });
   } else if (message.method === 'session/prompt') {
@@ -25,6 +28,10 @@ createInterface({ input: process.stdin }).on('line', async line => {
     if (mode === 'permission') {
       const result = await request('session/request_permission', { sessionId, toolCall: { toolCallId: 'tool-1', title: 'Write file' }, options: [{ optionId: 'allow', name: 'Allow once', kind: 'allow_once' }] });
       update(result.outcome.outcome);
+    }
+    if (mode === 'workspace-write') {
+      await request('fs/write_text_file', { sessionId, path: path.join(workspace, '.native-test', 'agent-write.txt'), content: 'ACP Agent wrote this workspace file' });
+      update('Workspace file saved;');
     }
     if (mode === 'files') {
       const read = await request('fs/read_text_file', { sessionId, path: '/workspace/test.txt', line: 2, limit: 1 });

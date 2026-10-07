@@ -48,5 +48,10 @@
   "Allow once": "Разрешить один раз",
   "Allow always": "Разрешать всегда",
   "Reject once": "Отклонить один раз",
-  "Reject always": "Отклонять всегда"
+  "Reject always": "Отклонять всегда",
+  "The ACP model is not available. Run ACP: Show Diagnostics and check Output > ACP.": "Модель ACP недоступна. Выполните ACP: Показать диагностику и откройте Output > ACP.",
+  "Running ACP agent: {0}": "Запуск ACP-агента: {0}",
+  "Run ACP workspace task": "Выполнить задачу ACP в рабочей папке",
+  "The ACP agent may modify workspace files and execute its own tools. Continue?": "ACP-агент может изменять файлы рабочей папки и выполнять собственные инструменты. Продолжить?",
+  "Enable the ACP workspace task tool in the chat tools picker.": "Включите инструмент задач ACP в списке инструментов чата."
 }
