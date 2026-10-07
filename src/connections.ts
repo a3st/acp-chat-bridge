@@ -13,11 +13,13 @@ export class Connections implements vscode.Disposable {
     const choice = await vscode.window.showQuickPick([
       ...this.all.map(c => ({ label: c.name, description: c.id === this.selected ? vscode.l10n.t("Selected") : c.command, id: c.id })),
       { label: `$(add) ${vscode.l10n.t("Add ACP")}`, id: 'add' },
-      { label: `$(trash) ${vscode.l10n.t("Remove ACP")}`, id: 'remove' }
+      { label: `$(trash) ${vscode.l10n.t("Remove ACP")}`, id: 'remove' },
+      { label: `$(refresh) ${vscode.l10n.t("Refresh ACP models")}`, id: 'refresh' }
     ], { title: vscode.l10n.t("ACP: connections"), placeHolder: vscode.l10n.t("Select a connection or an action") });
     if (!choice) return;
     if (choice.id === 'add') await this.add();
     else if (choice.id === 'remove') await this.remove();
+    else if (choice.id === 'refresh') this.event.fire();
     else { await this.context.globalState.update('acp.selected', choice.id); this.event.fire(); }
   }
   async add() {

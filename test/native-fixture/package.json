@@ -2,7 +2,7 @@
   "name": "acp-chat-bridge",
   "displayName": "ACP Chat Bridge",
   "description": "Native ACP integration test",
-  "version": "0.1.7",
+  "version": "0.1.11",
   "publisher": "a3st",
   "license": "MIT",
   "engines": {
@@ -106,6 +106,10 @@
             "prompt": {
               "type": "string",
               "description": "The workspace task and conversation context for the ACP agent."
+            },
+            "modelId": {
+              "type": "string",
+              "description": "Optional model ID advertised by the ACP agent. Selects the model before running the task."
             }
           },
           "required": [

@@ -31,7 +31,6 @@
   "JSON array of strings. The agent must support ACP over stdio.": "JSON-массив строк. Агент должен поддерживать ACP через stdio.",
   "Enter a JSON array of strings, for example [\"C:/agents/cli.js\", \"--acp\"]": "Введите JSON-массив строк, например [\"C:/agents/cli.js\", \"--acp\"]",
   "Remove ACP connection": "Удалить ACP-подключение",
-  "The ACP session is closed. Start a new session: @acp-agent /new.": "Сессия ACP закрыта. Начните новую сессию: @acp-agent /new.",
   "On Windows, use an executable .exe or node.exe with the CLI path in the arguments instead of .cmd/.bat.": "На Windows укажите исполняемый .exe или node.exe с путём к CLI в аргументах вместо .cmd/.bat.",
   "Could not start {0}: {1}": "Не удалось запустить {0}: {1}",
   "ACP {0} exited ({1}).": "ACP {0} завершился ({1}).",
@@ -53,5 +52,19 @@
   "Running ACP agent: {0}": "Запуск ACP-агента: {0}",
   "Run ACP workspace task": "Выполнить задачу ACP в рабочей папке",
   "The ACP agent may modify workspace files and execute its own tools. Continue?": "ACP-агент может изменять файлы рабочей папки и выполнять собственные инструменты. Продолжить?",
-  "Enable the ACP workspace task tool in the chat tools picker.": "Включите инструмент задач ACP в списке инструментов чата."
+  "Enable the ACP workspace task tool in the chat tools picker.": "Включите инструмент задач ACP в списке инструментов чата.",
+  "The ACP agent no longer offers model: {0}": "Модель больше недоступна в ACP-агенте: {0}",
+  "The ACP agent did not select model: {0}": "ACP-агент не выбрал модель: {0}",
+  "Authenticate the ACP CLI, then refresh its models in Manage Connections.": "Выполните вход в ACP CLI, затем обновите модели в меню управления подключениями.",
+  "Refresh ACP models": "Обновить модели ACP",
+  "The ACP agent finished without a text response. Check Output > ACP and the CLI provider authentication.": "ACP-агент завершил запрос без текстового ответа. Проверьте Вывод > ACP и авторизацию провайдера в CLI.",
+  "The ACP agent no longer offers mode: {0}": "Режим больше недоступен в ACP-агенте: {0}",
+  "The ACP agent did not select mode: {0}": "ACP-агент не выбрал режим: {0}",
+  "Add an ACP connection first.": "Сначала добавьте ACP-подключение.",
+  "This ACP agent does not advertise selectable modes.": "Этот ACP-агент не передаёт список режимов.",
+  "ACP mode: {0}": "Режим ACP: {0}",
+  "ACP mode selected: {0}. It will apply to the next request.": "Выбран режим ACP: {0}. Он применится к следующему запросу.",
+  "ACP mode selection cancelled.": "Выбор режима ACP отменён.",
+  "ACP command completed: /{0}": "Команда ACP выполнена: /{0}",
+  "The ACP session is closed. Start a new chat with ACP: Open Chat.": "Сессия ACP закрыта. Начните новый чат через ACP: Открыть чат."
 }

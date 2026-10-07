@@ -23,13 +23,14 @@ function harness(t, configs = []) {
   class LanguageModelToolResult { constructor(content) { this.content = content; } }
   const noop = { dispose() {} };
   const vscode = {
-    EventEmitter, Uri, LanguageModelTextPart, LanguageModelToolCallPart, LanguageModelToolResultPart, LanguageModelToolResult,
+    ChatResponseTurn: class { constructor(result) { this.participant = 'acp-chat-bridge.chat'; this.result = result; this.response = []; } },
+    CancellationTokenSource: class { token = token; dispose() {} }, EventEmitter, Uri, LanguageModelTextPart, LanguageModelToolCallPart, LanguageModelToolResultPart, LanguageModelToolResult,
     LanguageModelChatMessageRole: { User: 1, Assistant: 2 }, LanguageModelChatToolMode: { Auto: 1, Required: 2 },
     l10n: { t: (message, ...args) => message.replace(/\{(\d+)\}/g, (_, i) => String(args[Number(i)])) },
     workspace: { isTrusted: true }, env: {}, version: '1.140.0',
     window: {
       createOutputChannel: () => ({ append() {}, appendLine() {}, show() {}, dispose() {} }),
-      showQuickPick: async items => { pickCount++; return items.find(i => i.id === picks.shift()); },
+      showQuickPick: async items => { pickCount++; const id = picks.shift(); return items.find(i => i.id === id); },
       showInputBox: async options => { const value = inputs.shift(); if (value !== undefined) assert.equal(options.validateInput?.(value), undefined); return value; }
     },
     lm: { registerTool: (_name, value) => { tool = value; return noop; }, selectChatModels: async () => values.get('acp.connections').map(c => ({ id: c.id, vendor: 'acp-chat-bridge', family: `acp/${c.id}`, name: c.name })), registerLanguageModelChatProvider: (_vendor, value) => { order.push('provider'); provider = value; return noop; } },
@@ -169,4 +170,63 @@ test('ACP task tool exposes confirmation and rejects deleted connections', async
   const prepared = h.tool.prepareInvocation({ input: { connectionId: config.id, prompt: 'Edit file' } }, token);
   assert.match(prepared.confirmationMessages.message, /modify workspace files/);
   await assert.rejects(h.tool.invoke({ input: { connectionId: 'removed', prompt: 'Edit file' } }, token), /connection was removed/);
+});
+
+
+test('model discovery replaces connection entries with grouped CLI models and preserves routing in Agent', async t => {
+  const h = harness(t, [{ ...config, command: process.execPath, args: [require('node:path').join(__dirname, 'agent.mjs'), 'models'] }]);
+  h.vscode.workspace.workspaceFolders = [{ uri: { fsPath: process.cwd() } }];
+  const models = await h.provider.provideLanguageModelChatInformation({ silent: true }, token);
+  assert.deepEqual(models.map(m => m.name), ['Fast (Example agent)', 'Smart (Example agent)']);
+  assert.equal(models.some(m => m.id === config.id), false);
+  const smart = models[1];
+  const parts = [];
+  await h.provider.provideLanguageModelChatResponse(smart, [{ role: 1, content: [new h.vscode.LanguageModelTextPart('work')] }], { tools: [{ name: 'acp_chat_bridge_delegate' }], toolMode: 1 }, { report: p => parts.push(p) }, token);
+  assert.equal(parts[0].input.connectionId, config.id);
+  assert.equal(parts[0].input.modelId, 'provider/smart');
+  const result = await h.tool.invoke({ input: parts[0].input }, token);
+  assert.match(result.content[0].value, /model:provider\/smart/);
+  h.vscode.lm.selectChatModels = async () => models;
+  await h.commands.get('acp.openChat')();
+  assert.equal(h.calls[1][1].modelSelector.id, models[0].id);
+});
+
+
+test('mode selection applies the advertised mode to the Agent tool', async t => {
+  const h = harness(t, [{ ...config, command: process.execPath, args: [require('node:path').join(__dirname, 'agent.mjs'), 'models'] }]);
+  h.vscode.workspace.workspaceFolders = [{ uri: { fsPath: process.cwd() } }];
+  h.picks.push('plan');
+  await h.commands.get('acp.selectMode')();
+  assert.equal(h.values.get('acp.modes')[config.id], 'plan');
+  const result = await h.tool.invoke({ input: { connectionId: config.id, prompt: 'Inspect' } }, token);
+  assert.match(result.content[0].value, /mode:plan;/);
+});
+
+
+test('/mode keeps conversation metadata and switches the same ACP session before the next prompt', async t => {
+  const h = harness(t, [{ ...config, command: process.execPath, args: [require('node:path').join(__dirname, 'agent.mjs'), 'models'] }]);
+  h.vscode.workspace.workspaceFolders = [{ uri: { fsPath: process.cwd() } }];
+  const text = [];
+  const stream = { markdown: value => text.push(value), progress() {} };
+  const request = { prompt: 'first', references: [], model: { vendor: 'acp-chat-bridge', id: config.id } };
+  const first = await h.handler(request, { history: [] }, stream, token);
+  assert.ok(first.metadata?.sessionKey);
+  h.picks.push('plan');
+  const changed = await h.handler({ ...request, command: 'mode', prompt: '' }, { history: [new h.vscode.ChatResponseTurn(first)] }, stream, token);
+  assert.ok(changed.metadata, JSON.stringify(changed));
+  assert.equal(changed.metadata.sessionKey, first.metadata.sessionKey);
+  text.length = 0;
+  const next = await h.handler({ ...request, prompt: 'next' }, { history: [new h.vscode.ChatResponseTurn(changed)] }, stream, token);
+  assert.equal(next.metadata.sessionKey, first.metadata.sessionKey);
+  assert.match(text.join(''), /mode:plan;turn:2;/);
+});
+
+
+test('participant forwards a CLI slash command before replayed chat history', async t => {
+  const h = harness(t, [{ ...config, command: process.execPath, args: [require('node:path').join(__dirname, 'agent.mjs'), 'commands'] }]);
+  h.vscode.workspace.workspaceFolders = [{ uri: { fsPath: process.cwd() } }];
+  const text = [];
+  const result = await h.handler({ prompt: '/echo keep arguments', references: [], model: { vendor: 'acp-chat-bridge', id: config.id } }, { history: [new h.vscode.ChatResponseTurn({})] }, { markdown: t => text.push(t), progress() {} }, token);
+  assert.ok(result.metadata, JSON.stringify(result));
+  assert.deepEqual(text, ['CLI:keep arguments']);
 });

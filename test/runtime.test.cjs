@@ -83,3 +83,77 @@ test('runtime errors use the host locale and preserve substituted values', async
   try { await assert.rejects(session.prompt(blocks('test'), { text: () => {}, progress: () => {} }, AbortSignal.timeout(5000)), /Не удалось запустить Mock ACP:/); }
   finally { session.dispose(); }
 });
+
+
+for (const mode of ['models', 'legacy-models']) test(`discovers and switches CLI models before prompting (${mode})`, async () => {
+  const session = create(mode);
+  const chunks = [];
+  const signal = AbortSignal.timeout(5000);
+  try {
+    const models = await session.discoverModels(signal);
+    assert.deepEqual(models.map(m => m.id), ['provider/fast', 'provider/smart']);
+    assert.equal(models[0].current, true);
+    await session.prompt(blocks('work'), { text: t => chunks.push(t), progress() {} }, signal, 'provider/smart');
+    assert.equal(chunks[0], 'model:provider/smart;');
+    chunks.length = 0;
+    await session.prompt(blocks('follow up'), { text: t => chunks.push(t), progress() {} }, signal, 'provider/fast');
+    assert.equal(chunks[0], 'model:provider/fast;');
+    assert.match(chunks.join(''), /turn:2;/);
+  } finally { session.dispose(); }
+});
+
+test('an unavailable CLI model fails before any prompt executes', async () => {
+  const session = create('models');
+  const chunks = [];
+  try {
+    await assert.rejects(session.prompt(blocks('work'), { text: t => chunks.push(t), progress() {} }, AbortSignal.timeout(5000), 'provider/missing'), /no longer offers model/);
+    assert.deepEqual(chunks, []);
+  } finally { session.dispose(); }
+});
+
+
+test('an ACP end_turn without text is reported as a missing response instead of success', async () => {
+  const session = create('empty');
+  try {
+    await assert.rejects(session.prompt(blocks('work'), { text() {}, progress() {} }, AbortSignal.timeout(5000)), /finished without a text response/);
+    assert.equal(session.closed, true);
+  } finally { session.dispose(); }
+});
+
+
+for (const mode of ['models', 'legacy-modes']) test(`discovers and changes ACP Build/Plan modes in a reused session (${mode})`, async () => {
+  const session = create(mode);
+  const chunks = [];
+  const signal = AbortSignal.timeout(5000);
+  try {
+    await session.discoverModels(signal);
+    assert.deepEqual(session.availableModes.map(m => m.id), ['build', 'plan']);
+    await session.prompt(blocks('inspect'), { text: t => chunks.push(t), progress() {} }, signal, undefined, 'plan');
+    assert.match(chunks.join(''), /mode:plan;/);
+    chunks.length = 0;
+    await session.prompt(blocks('implement'), { text: t => chunks.push(t), progress() {} }, signal, undefined, 'build');
+    assert.match(chunks.join(''), /mode:build;turn:2;/);
+  } finally { session.dispose(); }
+});
+
+test('unknown ACP mode is rejected before any prompt', async () => {
+  const session = create('models');
+  const chunks = [];
+  try {
+    await assert.rejects(session.prompt(blocks('work'), { text: t => chunks.push(t), progress() {} }, AbortSignal.timeout(5000), undefined, 'missing'), /no longer offers mode/);
+    assert.deepEqual(chunks, []);
+  } finally { session.dispose(); }
+});
+
+
+test('CLI command arguments reach the agent unchanged and an advertised silent command gets confirmation', async () => {
+  const session = create('commands');
+  const text = [];
+  try {
+    await session.prompt(blocks('/echo one two'), { text: t => text.push(t), progress() {} }, AbortSignal.timeout(5000));
+    assert.deepEqual(text, ['CLI:one two']);
+    text.length = 0;
+    await session.prompt(blocks('/compact'), { text: t => text.push(t), progress() {} }, AbortSignal.timeout(5000));
+    assert.deepEqual(text, ['ACP command completed: /compact']);
+  } finally { session.dispose(); }
+});

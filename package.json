@@ -2,7 +2,7 @@
   "name": "acp-chat-bridge",
   "displayName": "ACP Chat Bridge",
   "description": "%extension.description%",
-  "version": "0.1.10",
+  "version": "0.1.16",
   "publisher": "a3st",
   "license": "MIT",
   "engines": {
@@ -54,12 +54,8 @@
         "isSticky": true,
         "commands": [
           {
-            "name": "connections",
-            "description": "%participant.connections.description%"
-          },
-          {
-            "name": "new",
-            "description": "%participant.new.description%"
+            "name": "mode",
+            "description": "%participant.mode.description%"
           }
         ]
       }
@@ -67,7 +63,7 @@
     "languageModelChatProviders": [
       {
         "vendor": "acp-chat-bridge",
-        "displayName": "ACP Chat Bridge",
+        "displayName": "ACP",
         "managementCommand": "acp.addConnection"
       }
     ],
@@ -92,6 +88,10 @@
       {
         "command": "acp.diagnostics",
         "title": "%acp.diagnostics.title%"
+      },
+      {
+        "command": "acp.selectMode",
+        "title": "%acp.selectMode.title%"
       }
     ],
     "menus": {
@@ -114,6 +114,10 @@
         },
         {
           "command": "acp.removeConnection",
+          "when": "false"
+        },
+        {
+          "command": "acp.selectMode",
           "when": "false"
         }
       ]
@@ -138,6 +142,14 @@
             "prompt": {
               "type": "string",
               "description": "The workspace task and conversation context for the ACP agent."
+            },
+            "modelId": {
+              "type": "string",
+              "description": "Optional model ID advertised by the ACP agent. Selects the model before running the task."
+            },
+            "modeId": {
+              "type": "string",
+              "description": "Optional ACP mode ID, for example build or plan. If omitted, uses the mode selected in Manage Connections."
             }
           },
           "required": [

@@ -31,7 +31,6 @@
   "JSON array of strings. The agent must support ACP over stdio.": "JSON array of strings. The agent must support ACP over stdio.",
   "Enter a JSON array of strings, for example [\"C:/agents/cli.js\", \"--acp\"]": "Enter a JSON array of strings, for example [\"C:/agents/cli.js\", \"--acp\"]",
   "Remove ACP connection": "Remove ACP connection",
-  "The ACP session is closed. Start a new session: @acp-agent /new.": "The ACP session is closed. Start a new session: @acp-agent /new.",
   "On Windows, use an executable .exe or node.exe with the CLI path in the arguments instead of .cmd/.bat.": "On Windows, use an executable .exe or node.exe with the CLI path in the arguments instead of .cmd/.bat.",
   "Could not start {0}: {1}": "Could not start {0}: {1}",
   "ACP {0} exited ({1}).": "ACP {0} exited ({1}).",
@@ -53,5 +52,19 @@
   "Running ACP agent: {0}": "Running ACP agent: {0}",
   "Run ACP workspace task": "Run ACP workspace task",
   "The ACP agent may modify workspace files and execute its own tools. Continue?": "The ACP agent may modify workspace files and execute its own tools. Continue?",
-  "Enable the ACP workspace task tool in the chat tools picker.": "Enable the ACP workspace task tool in the chat tools picker."
+  "Enable the ACP workspace task tool in the chat tools picker.": "Enable the ACP workspace task tool in the chat tools picker.",
+  "The ACP agent no longer offers model: {0}": "The ACP agent no longer offers model: {0}",
+  "The ACP agent did not select model: {0}": "The ACP agent did not select model: {0}",
+  "Authenticate the ACP CLI, then refresh its models in Manage Connections.": "Authenticate the ACP CLI, then refresh its models in Manage Connections.",
+  "Refresh ACP models": "Refresh ACP models",
+  "The ACP agent finished without a text response. Check Output > ACP and the CLI provider authentication.": "The ACP agent finished without a text response. Check Output > ACP and the CLI provider authentication.",
+  "The ACP agent no longer offers mode: {0}": "The ACP agent no longer offers mode: {0}",
+  "The ACP agent did not select mode: {0}": "The ACP agent did not select mode: {0}",
+  "Add an ACP connection first.": "Add an ACP connection first.",
+  "This ACP agent does not advertise selectable modes.": "This ACP agent does not advertise selectable modes.",
+  "ACP mode: {0}": "ACP mode: {0}",
+  "ACP mode selected: {0}. It will apply to the next request.": "ACP mode selected: {0}. It will apply to the next request.",
+  "ACP mode selection cancelled.": "ACP mode selection cancelled.",
+  "ACP command completed: /{0}": "ACP command completed: /{0}",
+  "The ACP session is closed. Start a new chat with ACP: Open Chat.": "The ACP session is closed. Start a new chat with ACP: Open Chat."
 }

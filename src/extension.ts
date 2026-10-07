@@ -4,12 +4,17 @@ import * as path from 'node:path';
 import { realpath } from 'node:fs/promises';
 import type * as acp from '@agentclientprotocol/sdk';
 import { Connections } from './connections';
-import { AgentSession, type Host } from './runtime';
+import { AgentSession, type Host, type AgentModel, type AgentMode } from './runtime';
 
 const vendor = 'acp-chat-bridge';
 const participantId = 'acp-chat-bridge.chat';
 const delegateTool = 'acp_chat_bridge_delegate';
-interface DelegateInput { connectionId: string; prompt: string }
+interface DelegateInput { connectionId: string; prompt: string; modelId?: string; modeId?: string }
+function modelKey(connectionId: string, modelId: string) { return `${connectionId}::${encodeURIComponent(modelId)}`; }
+function modelSelection(id: string) {
+  const [connectionId, encoded] = id.split('::');
+  return { connectionId, modelId: encoded === undefined ? undefined : decodeURIComponent(encoded) };
+}
 interface Metadata { sessionKey: string; turnId: string; connectionId: string }
 interface Entry { session: AgentSession; turnId: string; lastUsed: number }
 
@@ -51,11 +56,15 @@ async function workspaceFile(file: string): Promise<vscode.Uri> {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  const connections = new Connections(context);
+  const connections: Connections = new Connections(context);
   const output = vscode.window.createOutputChannel('ACP');
   output.appendLine(`ACP ${context.extension?.packageJSON.version ?? 'development'}; VS Code ${vscode.version}; trusted=${vscode.workspace.isTrusted}`);
   const sessions = new Map<string, Entry>();
   const directSessions = new Set<AgentSession>();
+  const modeCatalogs = new Map<string, AgentMode[]>();
+  const modeState = context.workspaceState ?? context.globalState;
+  const selectedMode = (id: string) => modeState.get<Record<string, string>>('acp.modes', {})[id];
+  const catalogs = new Map<string, Promise<AgentModel[]>>();
   const host: Host = {
     translate: (message, ...args) => vscode.l10n.t(message, ...args),
     log: text => output.append(text),
@@ -102,7 +111,53 @@ export function activate(context: vscode.ExtensionContext) {
     if (!choice) throw new vscode.CancellationError();
     return choice.folder.uri.fsPath;
   }
+  async function discover(config: import('./runtime').ConnectionConfig, token: vscode.CancellationToken, interactive: boolean) {
+    const folder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!vscode.workspace.isTrusted || !folder || token.isCancellationRequested) return [];
+    const key = JSON.stringify([config, folder]);
+    let pending = catalogs.get(key);
+    if (!pending) {
+      pending = (async () => {
+        const cancellation = abortToken(token);
+        const discoveryHost: Host = interactive ? host : { ...host, authenticate: async () => {
+          throw new Error(vscode.l10n.t("Authenticate the ACP CLI, then refresh its models in Manage Connections."));
+        }};
+        const session = new AgentSession(config, folder, discoveryHost);
+        directSessions.add(session);
+        try {
+          const models = await session.discoverModels(cancellation.signal);
+          modeCatalogs.set(config.id, session.availableModes);
+          return models;
+        }
+        finally { session.dispose(); directSessions.delete(session); cancellation.dispose(); }
+      })();
+      catalogs.set(key, pending);
+      pending.catch(() => { if (catalogs.get(key) === pending) catalogs.delete(key); });
+    }
+    return pending;
+  }
+  async function chooseMode(config: import('./runtime').ConnectionConfig | undefined = connections.get(connections.selected ?? ''), token?: vscode.CancellationToken, active?: AgentSession): Promise<(vscode.QuickPickItem & { id: string }) | undefined> {
+    if (!config) throw new Error(vscode.l10n.t("Add an ACP connection first."));
+    const source = new vscode.CancellationTokenSource();
+    try {
+      let modes = active && !active.closed ? active.availableModes : undefined;
+      if (!modes?.length) {
+        await discover(config, token ?? source.token, true);
+        modes = modeCatalogs.get(config.id) ?? [];
+      }
+      if (!modes.length) throw new Error(vscode.l10n.t("This ACP agent does not advertise selectable modes."));
+      const choice = await vscode.window.showQuickPick(modes.map(mode => ({
+        label: mode.name, description: mode.id === selectedMode(config.id) || (!selectedMode(config.id) && mode.current) ? vscode.l10n.t("Selected") : mode.description,
+        id: mode.id
+      })), { title: vscode.l10n.t("ACP mode: {0}", config.name) }, token ?? source.token);
+      if (!choice) return;
+      await modeState.update('acp.modes', { ...modeState.get<Record<string, string>>('acp.modes', {}), [config.id]: choice.id });
+      return choice;
+    } finally { source.dispose(); }
+  }
   const changed = connections.onDidChange(() => {
+    catalogs.clear();
+    modeCatalogs.clear();
     for (const [key, entry] of sessions) if (!connections.get(entry.session.config.id)) { entry.session.dispose(); sessions.delete(key); }
     for (const session of directSessions) if (!connections.get(session.config.id)) session.dispose();
   });
@@ -126,7 +181,7 @@ export function activate(context: vscode.ExtensionContext) {
         let answer = '';
         await session.prompt([{ type: 'text', text: options.input.prompt }], {
           text: text => { answer += text; }, progress: text => output.appendLine(text)
-        }, cancellation.signal);
+        }, cancellation.signal, options.input.modelId, options.input.modeId ?? selectedMode(config.id));
         return new vscode.LanguageModelToolResult([new vscode.LanguageModelTextPart(answer)]);
       } finally {
         if (session) { session.dispose(); directSessions.delete(session); }
@@ -141,17 +196,31 @@ export function activate(context: vscode.ExtensionContext) {
       // Manage Models invokes discovery with silent=false for legacy managementCommand providers.
       // Silent discovery must never open input UI or start an agent process.
       if (!options.silent && !token.isCancellationRequested) await connections.add();
-      const models: vscode.LanguageModelChatInformation[] = connections.all.map(c => ({
-        id: c.id, name: `ACP · ${c.name}`, family: `acp/${c.id}`, version: '1',
-        // ACP doesn't expose a tokenizer or context limits. Conservative UI estimates only.
-        maxInputTokens: 32768, maxOutputTokens: 8192, capabilities: { toolCalling: true, imageInput: false },
-        tooltip: vscode.l10n.t("ACP agent: {0}", c.command), detail: 'ACP'
-      }));
+      const models: vscode.LanguageModelChatInformation[] = [];
+      for (const config of connections.all) {
+        if (token.isCancellationRequested) break;
+        try {
+          const available = await discover(config, token, !options.silent);
+          const entries = available.length ? available : [{ id: '', name: config.name }];
+          for (const model of entries) models.push({
+            id: model.id ? modelKey(config.id, model.id) : config.id,
+            name: model.id ? `${model.name} (${config.name})` : `ACP · ${config.name}`,
+            family: `acp/${config.id}`, version: '1',
+            maxInputTokens: 32768, maxOutputTokens: 8192,
+            capabilities: { toolCalling: true, imageInput: false },
+            tooltip: model.description ?? vscode.l10n.t("ACP agent: {0}", config.command), detail: config.name
+          });
+        } catch (error) {
+          output.appendLine(`ACP model discovery failed (${config.name}): ${error instanceof Error ? error.message : String(error)}`);
+          if (!options.silent && !token.isCancellationRequested) throw error;
+        }
+      }
       return models;
     },
     provideTokenCount: async (_model, text) => Math.ceil((typeof text === 'string' ? text : JSON.stringify(text.content)).length / 3),
     provideLanguageModelChatResponse: async (model, messages, options, progress, token) => {
-      const config = connections.get(model.id);
+      const selection = modelSelection(model.id);
+      const config = connections.get(selection.connectionId);
       if (!config) throw new Error(vscode.l10n.t("The ACP connection was removed."));
       if (token.isCancellationRequested) return;
       // A tool result completes this turn; never replay the ACP task after tool execution.
@@ -172,7 +241,7 @@ export function activate(context: vscode.ExtensionContext) {
       }).join('')}`).join('\n\n');
       const tool = options.tools?.find(tool => tool.name === delegateTool);
       if (tool) {
-        progress.report(new vscode.LanguageModelToolCallPart(randomUUID(), tool.name, { connectionId: config.id, prompt: text }));
+        progress.report(new vscode.LanguageModelToolCallPart(randomUUID(), tool.name, { connectionId: config.id, prompt: text, modelId: selection.modelId, modeId: selectedMode(config.id) }));
         return;
       }
       if (options.toolMode === vscode.LanguageModelChatToolMode.Required) {
@@ -184,7 +253,7 @@ export function activate(context: vscode.ExtensionContext) {
         session = new AgentSession(config, await cwd(cancellation.signal), host);
         directSessions.add(session);
         // Direct model usage has no stable chat session ID. Replay context in a fresh ACP session.
-        await session.prompt([{ type: 'text', text }], { text: t => progress.report(new vscode.LanguageModelTextPart(t)), progress: () => {} }, cancellation.signal);
+        await session.prompt([{ type: 'text', text }], { text: t => progress.report(new vscode.LanguageModelTextPart(t)), progress: () => {} }, cancellation.signal, selection.modelId, selectedMode(config.id));
       } finally { if (session) { session.dispose(); directSessions.delete(session); } cancellation.dispose(); }
     }
   };
@@ -192,26 +261,27 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(vscode.lm.registerLanguageModelChatProvider(vendor, provider));
   const participant = vscode.chat.createChatParticipant(participantId, async (request, chatContext, stream, token): Promise<vscode.ChatResult> => {
     output.appendLine(`ACP participant invoked: command=${request.command ?? 'prompt'}; vendor=${request.model?.vendor ?? 'none'}; model=${request.model?.id ?? 'none'}`);
-    if (request.command === 'connections') { await connections.manage(); stream.markdown(vscode.l10n.t("Select an ACP connection in the model picker below the input field.")); return {}; }
     const cancellation = abortToken(token);
     let key: string | undefined;
     try {
       const previous = [...chatContext.history].reverse().find(t => t instanceof vscode.ChatResponseTurn && t.participant === participantId) as vscode.ChatResponseTurn | undefined;
       const metadata = previous?.result.metadata as Metadata | undefined;
-      const modelId = request.model?.vendor === vendor ? request.model.family.replace(/^acp\//, '') : undefined;
-      const config = connections.get(modelId ?? connections.selected ?? '');
+      const selection = request.model?.vendor === vendor ? modelSelection(request.model.id) : undefined;
+      const config = connections.get(selection?.connectionId ?? connections.selected ?? '');
       if (!config) {
         stream.markdown(vscode.l10n.t("Add an ACP connection, then select it in the model picker below the input field."));
         stream.button({ command: 'acp.manageConnections', title: vscode.l10n.t("ACP connections") });
         return {};
       }
+      if (request.command === 'mode') {
+        const active = metadata && metadata.connectionId === config.id ? sessions.get(metadata.sessionKey)?.session : undefined;
+        const choice = await chooseMode(config, token, active);
+        if (choice) stream.markdown(vscode.l10n.t("ACP mode selected: {0}. It will apply to the next request.", choice.label));
+        else stream.markdown(vscode.l10n.t("ACP mode selection cancelled."));
+        return metadata ? { metadata } : {};
+      }
       stream.progress(`ACP: ${config.name}`);
       let entry = metadata ? sessions.get(metadata.sessionKey) : undefined;
-      if (request.command === 'new') {
-        entry?.session.dispose();
-        if (metadata) sessions.delete(metadata.sessionKey);
-        entry = undefined;
-      }
       if (!entry || entry.session.closed || entry.session.isBusy || entry.session.config.id !== config.id || entry.turnId !== metadata?.turnId) {
         entry = undefined;
       }
@@ -227,11 +297,12 @@ export function activate(context: vscode.ExtensionContext) {
         sessions.set(key, entry);
       }
       const prompt: acp.ContentBlock[] = [];
-      if (!entry.turnId && request.command !== 'new' && chatContext.history.length) {
+      const isCliCommand = !request.command && request.prompt.trimStart().startsWith('/');
+      if (!entry.turnId && !isCliCommand && chatContext.history.length) {
         const history = chatContext.history.map(t => t instanceof vscode.ChatRequestTurn ? `User: ${t.prompt}` : `Assistant: ${t.response.map(p => p instanceof vscode.ChatResponseMarkdownPart ? p.value.value : '').join('')}`).join('\n\n');
         prompt.push({ type: 'text', text: `Previous conversation (context):\n${history}` });
       }
-      prompt.push({ type: 'text', text: request.prompt || vscode.l10n.t("Start a new session and confirm that you are ready.") });
+      prompt.push({ type: 'text', text: (isCliCommand ? request.prompt.trimStart() : request.prompt) || vscode.l10n.t("Start a new session and confirm that you are ready.") });
       for (const reference of request.references) {
         const value = reference.value;
         if (value instanceof vscode.Uri || value instanceof vscode.Location) {
@@ -245,7 +316,7 @@ export function activate(context: vscode.ExtensionContext) {
           stream.reference(value);
         } else if (typeof value === 'string') prompt.push({ type: 'text', text: value });
       }
-      await entry.session.prompt(prompt, { text: t => stream.markdown(t), progress: t => stream.progress(t) }, cancellation.signal);
+      await entry.session.prompt(prompt, { text: t => stream.markdown(t), progress: t => stream.progress(t) }, cancellation.signal, selection?.modelId, selectedMode(config.id));
       entry.turnId = randomUUID();
       entry.lastUsed = Date.now();
       return { metadata: { sessionKey: key, turnId: entry.turnId, connectionId: config.id } satisfies Metadata };
@@ -259,6 +330,7 @@ export function activate(context: vscode.ExtensionContext) {
   });
   participant.iconPath = vscode.Uri.joinPath(context.extensionUri, 'assets', 'icon.png');
   context.subscriptions.push(connections, output, changed, participant,
+    vscode.commands.registerCommand('acp.selectMode', () => chooseMode()),
     vscode.commands.registerCommand('acp.manageConnections', () => connections.manage()),
     vscode.commands.registerCommand('acp.addConnection', () => connections.add()),
     vscode.commands.registerCommand('acp.removeConnection', () => connections.remove()),
@@ -283,16 +355,19 @@ export function activate(context: vscode.ExtensionContext) {
       if (!connections.all.length) await connections.add();
       const config = connections.get(connections.selected ?? '') ?? connections.all[0];
       if (!config) return; // Initial setup was cancelled.
-      const models = await vscode.lm.selectChatModels({ vendor, id: config.id });
+      const models = (await vscode.lm.selectChatModels({ vendor })).filter(model => modelSelection(model.id).connectionId === config.id);
       output.appendLine(`ACP open chat: selected=${config.id}; resolvedModels=${models.length}`);
       if (!models.length) {
         output.show(true);
         throw new Error(vscode.l10n.t("The ACP model is not available. Run ACP: Show Diagnostics and check Output > ACP."));
       }
+      const catalog = await catalogs.get(JSON.stringify([config, vscode.workspace.workspaceFolders?.[0]?.uri.fsPath]));
+      const preferred = catalog?.find(model => model.current) ?? catalog?.[0];
+      const selectedModel = models.find(model => modelSelection(model.id).modelId === preferred?.id) ?? models[0];
       // Third-party participants run in local chat; agent-host/cloud sessions own their model selection.
       await vscode.commands.executeCommand('workbench.action.chat.newLocalChat');
       await vscode.commands.executeCommand('workbench.action.chat.open', {
-        query: '@acp-agent ', isPartialQuery: true, mode: 'agent', modelSelector: { vendor, id: config.id }
+        query: '@acp-agent ', isPartialQuery: true, mode: 'agent', modelSelector: { vendor, id: selectedModel.id }
       });
     }),
     { dispose: () => { for (const entry of sessions.values()) entry.session.dispose(); sessions.clear(); for (const session of directSessions) session.dispose(); directSessions.clear(); } }

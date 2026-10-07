@@ -2,13 +2,13 @@
   "extension.description": "Подключение ACP-агентов к встроенному чату VS Code.",
   "workspaceTrust.description": "ACP-агенты запускают локальные программы и могут изменять файлы рабочей папки.",
   "participant.description": "Работа с подключённым ACP-агентом",
-  "participant.connections.description": "Добавить, выбрать или удалить ACP-подключение",
-  "participant.new.description": "Начать новую сессию ACP",
   "acp.openChat.title": "ACP: Открыть чат",
   "acp.manageConnections.title": "ACP: Управление подключениями",
   "acp.addConnection.title": "ACP: Добавить подключение",
   "acp.removeConnection.title": "ACP: Удалить подключение",
   "acp.diagnostics.title": "ACP: Показать диагностику",
   "tool.delegate.title": "ACP: Задача в рабочей папке",
-  "tool.delegate.description": "Выполнить задачу ACP-агентом, включая изменение файлов и инструменты агента."
+  "tool.delegate.description": "Выполнить задачу ACP-агентом, включая изменение файлов и инструменты агента.",
+  "participant.mode.description": "Выбрать режим ACP-агента (например, Build или Plan)",
+  "acp.selectMode.title": "ACP: Выбрать режим"
 }
